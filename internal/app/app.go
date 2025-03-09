@@ -1,8 +1,8 @@
 package app
 
 import (
+	grpcapp "github.com/leotapok/sso/internal/app/grpc"
 	"log/slog"
-	grpcapp "sso/internal/app/grpc"
 	"time"
 )
 

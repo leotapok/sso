@@ -1,10 +1,12 @@
 package main
 
 import (
+	"github.com/leotapok/sso/internal/app"
+	"github.com/leotapok/sso/internal/config"
 	"log/slog"
 	"os"
-	"sso/internal/app"
-	"sso/internal/config"
+	"os/signal"
+	"syscall"
 )
 
 const (
@@ -22,7 +24,18 @@ func main() {
 
 	application := app.New(log, cfg.GRPC.Port, cfg.StoragePath, cfg.TokenTTL)
 
-	application.GRPCServer.MustRun()
+	go application.GRPCServer.MustRun()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	sign := <-stop
+
+	log.Info("stop", slog.Any("signal", sign))
+
+	application.GRPCServer.Stop()
+
+	log.Info("app stopped")
 }
 
 func setupLogger(env string) *slog.Logger {
