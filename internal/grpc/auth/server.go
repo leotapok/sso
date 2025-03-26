@@ -2,7 +2,10 @@ package auth
 
 import (
 	"context"
+	"errors"
 	ssov1 "github.com/leotapok/protos/gen/go/sso"
+	"github.com/leotapok/sso/internal/services/auth"
+	"github.com/leotapok/sso/internal/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -44,6 +47,11 @@ func (s *serverAPI) Login(ctx context.Context,
 
 	token, err := s.auth.Login(ctx, req.GetEmail(), req.GetPassword(), req.GetAppId())
 	if err != nil {
+		if errors.Is(err, auth.ErrInvalidCredentials) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+	if err != nil {
 		return nil, status.Error(codes.Internal, "internal server error")
 	}
 
@@ -61,6 +69,12 @@ func (s *serverAPI) Register(ctx context.Context,
 	userID, err := s.auth.RegisterNewUser(ctx, req.GetEmail(), req.GetPassword())
 
 	if err != nil {
+		if errors.Is(err, auth.ErrUserExists) {
+			return nil, status.Error(codes.AlreadyExists, err.Error())
+		}
+	}
+
+	if err != nil {
 		return nil, status.Error(codes.Internal, "internal server error")
 	}
 
@@ -69,12 +83,24 @@ func (s *serverAPI) Register(ctx context.Context,
 	}, nil
 }
 
-func (s *serverAPI) IsAdmin(ctx context.Context, req *ssov1.IsAdminRequest) (*ssov1.IsAdminResponse, error) {
-	if err := validateIsAdmin(req); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+func (s *serverAPI) IsAdmin(
+	ctx context.Context,
+	in *ssov1.IsAdminRequest,
+) (*ssov1.IsAdminResponse, error) {
+	if in.UserId == 0 {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
 	}
 
-	return &ssov1.IsAdminResponse{IsAdmin: true}, nil
+	isAdmin, err := s.auth.IsAdmin(ctx, in.GetUserId())
+	if err != nil {
+		if errors.Is(err, storage.ErrUserNotFound) {
+			return nil, status.Error(codes.NotFound, "user not found")
+		}
+
+		return nil, status.Error(codes.Internal, "failed to check admin status")
+	}
+
+	return &ssov1.IsAdminResponse{IsAdmin: isAdmin}, nil
 }
 
 func validateLogin(req *ssov1.LoginRequest) error {

@@ -17,10 +17,11 @@ type App struct {
 func New(
 	log *slog.Logger,
 	port int,
+	authService authgrpc.Auth,
 ) *App {
 	grpcServer := grpc.NewServer()
 
-	authgrpc.Register(grpcServer)
+	authgrpc.Register(grpcServer, authService)
 
 	return &App{
 		log:        log,
@@ -29,11 +30,11 @@ func New(
 	}
 }
 
-func (a *App) MustRun() error {
+func (a *App) MustRun() {
 	if err := a.Run(); err != nil {
 		panic(err)
 	}
-	return nil
+	return
 }
 
 func (a *App) Run() error {

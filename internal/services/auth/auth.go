@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/leotapok/sso/lib/jwt"
 
 	"github.com/leotapok/sso/internal/domain/models"
 	"github.com/leotapok/sso/internal/storage"
@@ -38,6 +39,8 @@ type AppProvider interface {
 
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrInvalidAppID       = errors.New("invalid app id")
+	ErrUserExists         = errors.New("user already exists")
 )
 
 func New(
@@ -60,6 +63,7 @@ func (a *Auth) Login(
 	ctx context.Context,
 	email string,
 	password string,
+	appID int64,
 ) (string, error) {
 	const op = "auth.Login"
 
@@ -74,10 +78,32 @@ func (a *Auth) Login(
 	if err != nil {
 		if errors.Is(err, storage.ErrUserNotFound) {
 			a.log.Warn("User not found")
-
 			return "", fmt.Errorf("%s: %w", op, ErrInvalidCredentials)
 		}
+		a.log.Error("Failed to get user", err)
+
+		return "", fmt.Errorf("%s: %w", op, err)
 	}
+	if err := bcrypt.CompareHashAndPassword(user.PassHash, []byte(password)); err != nil {
+		a.log.Info("Invalid credentials", err)
+
+		return "", fmt.Errorf("%s: %w", op, ErrInvalidCredentials)
+	}
+	app, err := a.appProvider.App(ctx, appID)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", op, err)
+	}
+
+	log.Info("user logged in successfully")
+
+	token, err := jwt.NewToken(user, app, a.tokenTTL)
+	if err != nil {
+		a.log.Error("failed to generate token", err)
+
+		return "", fmt.Errorf("%s: %w", op, err)
+	}
+
+	return token, nil
 }
 
 func (a *Auth) RegisterNewUser(
@@ -101,6 +127,11 @@ func (a *Auth) RegisterNewUser(
 
 	id, err := a.userSaver.SaveUser(ctx, email, passHash)
 	if err != nil {
+		if errors.Is(err, storage.ErrUserExists) {
+			log.Warn("User already exists")
+
+			return 0, fmt.Errorf("%s: %w", op, ErrUserExists)
+		}
 		log.Error("Failed to save user", err)
 		return 0, fmt.Errorf("%s: %w", op, err)
 	}
@@ -109,6 +140,21 @@ func (a *Auth) RegisterNewUser(
 	return id, nil
 }
 
-func IsAdmin(ctx context.Context, userID int64) bool {
-	panic("implement me")
+func (a *Auth) IsAdmin(ctx context.Context, userID int64) (bool, error) {
+	const op = "auth.IsAdmin"
+	log := a.log.With(
+		slog.String("op", op),
+		slog.Int64("user_id", userID),
+	)
+
+	log.Info("Checking if user is admin")
+	isAdmin, err := a.userProvider.IsAdmin(ctx, userID)
+	if err != nil {
+		if errors.Is(err, storage.ErrAppNotFound) {
+			return false, fmt.Errorf("%s: %w", op, ErrInvalidAppID)
+		}
+		return false, fmt.Errorf("%s: %w", op, err)
+	}
+	log.Info("Checked if user is admin", slog.Bool("isAdmin", isAdmin))
+	return isAdmin, nil
 }
