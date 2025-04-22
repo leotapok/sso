@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/leotapok/sso/internal/lib/jwt"
 
 	"github.com/leotapok/sso/internal/domain/models"
 	"github.com/leotapok/sso/internal/storage"
@@ -60,24 +61,51 @@ func (a *Auth) Login(
 	ctx context.Context,
 	email string,
 	password string,
+	appID int64,
 ) (string, error) {
-	const op = "auth.Login"
+	const op = "Auth.Login"
 
 	log := a.log.With(
 		slog.String("op", op),
 		slog.String("username", email),
 	)
 
-	log.Info("Attempting to login")
+	log.Info("attempting to login user")
 
 	user, err := a.userProvider.User(ctx, email)
 	if err != nil {
 		if errors.Is(err, storage.ErrUserNotFound) {
-			a.log.Warn("User not found")
+			a.log.Warn("user not found", err)
 
 			return "", fmt.Errorf("%s: %w", op, ErrInvalidCredentials)
 		}
+
+		a.log.Error("failed to get user", err)
+
+		return "", fmt.Errorf("%s: %w", op, err)
 	}
+
+	if err := bcrypt.CompareHashAndPassword(user.PassHash, []byte(password)); err != nil {
+		a.log.Info("invalid credentials", err)
+
+		return "", fmt.Errorf("%s: %w", op, ErrInvalidCredentials)
+	}
+
+	app, err := a.appProvider.App(ctx, appID)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", op, err)
+	}
+
+	log.Info("user logged in successfully")
+
+	token, err := jwt.NewToken(user, app, a.tokenTTL)
+	if err != nil {
+		a.log.Error("failed to generate token", err)
+
+		return "", fmt.Errorf("%s: %w", op, err)
+	}
+
+	return token, nil
 }
 
 func (a *Auth) RegisterNewUser(
@@ -109,6 +137,23 @@ func (a *Auth) RegisterNewUser(
 	return id, nil
 }
 
-func IsAdmin(ctx context.Context, userID int64) bool {
-	panic("implement me")
+// IsAdmin checks if user is admin.
+func (a *Auth) IsAdmin(ctx context.Context, userID int64) (bool, error) {
+	const op = "Auth.IsAdmin"
+
+	log := a.log.With(
+		slog.String("op", op),
+		slog.Int64("user_id", userID),
+	)
+
+	log.Info("checking if user is admin")
+
+	isAdmin, err := a.userProvider.IsAdmin(ctx, userID)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", op, err)
+	}
+
+	log.Info("checked if user is admin", slog.Bool("is_admin", isAdmin))
+
+	return isAdmin, nil
 }
