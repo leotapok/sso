@@ -73,8 +73,12 @@ func (s *serverAPI) IsAdmin(ctx context.Context, req *ssov1.IsAdminRequest) (*ss
 	if err := validateIsAdmin(req); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	isAdmin, err := s.auth.IsAdmin(ctx, req.GetUserId())
+	if err != nil {
+		return nil, status.Error(codes.Internal, "internal server error")
+	}
 
-	return &ssov1.IsAdminResponse{IsAdmin: true}, nil
+	return &ssov1.IsAdminResponse{IsAdmin: isAdmin}, nil
 }
 
 func validateLogin(req *ssov1.LoginRequest) error {
