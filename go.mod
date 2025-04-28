@@ -8,7 +8,7 @@ require (
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/leotapok/protos v0.0.4
 	golang.org/x/crypto v0.36.0
-	google.golang.org/grpc v1.71.0
+	google.golang.org/grpc v1.72.0
 )
 
 require (
